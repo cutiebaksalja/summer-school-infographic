@@ -20,6 +20,10 @@
         let db;
         let auth;
         let currentUserId = ''; // 현재 사용자의 ID를 저장할 변수
+        let firebaseReadyResolve; // Firebase 초기화 완료를 알리는 Promise의 resolve 함수
+        const firebaseReadyPromise = new Promise(resolve => {
+            firebaseReadyResolve = resolve; // Promise를 외부에 노출하여 resolve 가능하게 함
+        });
 
         // Firebase 초기화 및 인증
         const initializeFirebase = async () => {
@@ -28,30 +32,42 @@
                 db = getFirestore(app);
                 auth = getAuth(app);
 
-                // 커스텀 토큰이 있으면 로그인, 없으면 익명 로그인
-                if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-                    await signInWithCustomToken(auth, __initial_auth_token);
-                } else {
-                    await signInAnonymously(auth);
-                }
-
-                // 인증 상태 변경 감지
-                onAuthStateChanged(auth, (user) => {
+                // Firebase 인증 상태 변경 감지 리스너 설정
+                // 이 리스너는 인증 상태가 결정되면 (로그인 성공 또는 익명 로그인) 한 번 호출됩니다.
+                onAuthStateChanged(auth, async (user) => {
                     if (user) {
                         currentUserId = user.uid;
                         console.log("Firebase initialized and authenticated. User ID:", currentUserId);
-                        // 인증 후 필요한 UI 업데이트 또는 데이터 로드
                     } else {
-                        currentUserId = crypto.randomUUID(); // 익명 사용자 ID 생성
-                        console.log("Firebase initialized. Anonymous User ID:", currentUserId);
+                        // __initial_auth_token이 없으면 익명 로그인 시도
+                        if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+                            try {
+                                await signInWithCustomToken(auth, __initial_auth_token);
+                                currentUserId = auth.currentUser.uid;
+                                console.log("Firebase initialized and authenticated with custom token. User ID:", currentUserId);
+                            } catch (tokenError) {
+                                console.warn("Custom token sign-in failed, trying anonymous:", tokenError);
+                                await signInAnonymously(auth);
+                                currentUserId = auth.currentUser.uid;
+                                console.log("Firebase initialized. Anonymous User ID:", currentUserId);
+                            }
+                        } else {
+                            await signInAnonymously(auth);
+                            currentUserId = auth.currentUser.uid; // 익명 사용자 ID
+                            console.log("Firebase initialized. Anonymous User ID:", currentUserId);
+                        }
                     }
-                    // 로딩 인디케이터 숨기기 등
+                    // Firebase 초기화 완료 후 로딩 메시지 숨김
                     document.getElementById('loadingMessage').classList.add('hidden');
+                    // Firebase가 사용할 준비가 되었음을 Promise로 알림
+                    firebaseReadyResolve();
                 });
 
             } catch (error) {
                 console.error("Error initializing Firebase:", error);
                 document.getElementById('loadingMessage').textContent = "Firebase 초기화 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.";
+                // 오류 발생 시에도 Promise를 해결하여 기능 사용 시 오류 메시지를 띄우도록 함
+                firebaseReadyResolve();
             }
         };
 
@@ -77,8 +93,11 @@
 
         // 상품 선택 및 Firestore에 저장
         window.selectPrize = async (prize) => {
+            // Firebase가 완전히 준비될 때까지 기다림
+            await firebaseReadyPromise;
+
             if (!db || !auth.currentUser) {
-                console.error("Firestore 또는 인증이 준비되지 않았습니다.");
+                console.error("Firestore 또는 인증이 준비되지 않았습니다. (FirebaseReadyPromise 이후)");
                 showMessageBox("오류: 데이터베이스 연결에 문제가 있습니다. 잠시 후 다시 시도해주세요.");
                 return;
             }
@@ -108,6 +127,9 @@
 
         // 당첨자 상품 선택 현황 조회 (관리자용)
         window.showWinnerSelections = async () => {
+            // Firebase가 완전히 준비될 때까지 기다림
+            await firebaseReadyPromise;
+
             if (!db || !auth.currentUser) {
                 showMessageBox("오류: 데이터베이스 연결에 문제가 있습니다. 잠시 후 다시 시도해주세요.");
                 return;
@@ -206,7 +228,24 @@
             list-style: none;
             padding: 0;
         }
-        .winner-list li {
+        /* 1등 당첨자 리스트 스타일 (클릭 방지) */
+        .winner-list.first-place-winners li {
+            background-color: #ffffff;
+            padding: 0.5rem 1rem;
+            margin-bottom: 0.5rem;
+            border-radius: 5px;
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.05);
+            display: flex;
+            align-items: center;
+            cursor: default; /* 마우스 포인터 변경 없음 */
+        }
+        .winner-list.first-place-winners li::before {
+            content: '⭐'; /* Star icon */
+            margin-right: 0.5rem;
+        }
+
+        /* 2등 당첨자 리스트 스타일 (클릭 가능) */
+        .winner-list.second-place-winners li {
             background-color: #ffffff;
             padding: 0.5rem 1rem;
             margin-bottom: 0.5rem;
@@ -217,13 +256,15 @@
             cursor: pointer; /* 2등 당첨자 이름에 커서 포인터 추가 */
             transition: background-color 0.2s ease;
         }
-        .winner-list li:hover {
+        .winner-list.second-place-winners li:hover {
             background-color: #e0f7fa; /* 호버 시 배경색 변경 */
         }
-        .winner-list li::before {
+        .winner-list.second-place-winners li::before {
             content: '⭐'; /* Star icon */
             margin-right: 0.5rem;
         }
+
+
         .call-to-action {
             background-color: #ffd700; /* Gold for highlight */
             color: #333333;
@@ -356,7 +397,7 @@
             <p class="text-gray-700 leading-relaxed purpose-paragraph">
                 러셀 울산학원 썸머스쿨 오픈을 기념하여 진행된 <span class="highlight">"썸머스쿨 소원을 말해봐 이벤트"</span>에 참여해주신 모든 분들께 진심으로 감사드립니다.
             </p>
-            <p class="text-gray-700 leading-relaxed purpose-paragraph">
+            <p class="text-700 leading-relaxed purpose-paragraph">
                 이번 이벤트를 통해 재원생과 단과생들이 <span class="highlight">여름방학 동안 이루고 싶은 소원</span>을 작성하도록 독려하고, 추첨을 통해 선물을 증정함으로써 학원에 대한 소속감을 느끼고 긍정적인 분위기 속에서 학업에 집중할 수 있도록 유도하고자 했습니다. 여러분의 소중한 참여 덕분에 이벤트가 더욱 빛날 수 있었습니다.
             </p>
 
@@ -364,7 +405,8 @@
 
             <div class="prize-category">
                 <h3>🥇 1등 당첨자</h3>
-                <ul class="winner-list">
+                <ul class="winner-list first-place-winners">
+                    <!-- 1등 당첨자는 클릭 이벤트 없음 -->
                     <li>김ㅇ현 (061010)</li>
                     <li>홍ㅇ서 (081217)</li>
                     <li>강ㅇ서 (060807)</li>
@@ -374,8 +416,8 @@
             </div>
 
             <div class="prize-category">
-                <h3>  2등 당첨자 (클릭하여 상품 선택)</h3>
-                <ul class="winner-list grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+                <h3>🥈 2등 당첨자 (클릭하여 상품 선택)</h3>
+                <ul class="winner-list second-place-winners grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
                     <!-- 2등 당첨자 리스트 (클릭 시 상품 선택 모달 열림) -->
                     <li onclick="openPrizeSelectionModal('강ㅇ주', '040213')">강ㅇ주 (040213)</li>
                     <li onclick="openPrizeSelectionModal('강ㅇ서', '060807')">강ㅇ서 (060807)</li>
@@ -412,7 +454,7 @@
             <div class="call-to-action">
                 <h2 class="text-2xl font-bold mb-2">🎁 상품 수령 안내</h2>
                 <p class="text-lg">당첨자 확인 문자를 들고 3층 입학처에 상품을 수령하러 오시면 됩니다.</p>
-                <a href="#" onclick="alert('이벤트 참여 및 당첨에 감사드립니다! 🎉'); return false;">자세히 보기</a>
+                <a href="#" onclick="showMessageBox('6월 16일(월) ~ 6월 30일(월)까지 수령가능합니다!'); return false;">자세히 보기</a>
             </div>
 
             <div class="mt-8 text-center">
@@ -455,4 +497,3 @@
 
 </body>
 </html>
- 
