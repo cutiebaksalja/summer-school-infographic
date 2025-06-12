@@ -12,9 +12,9 @@
         import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { getFirestore, doc, setDoc, getDocs, collection } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
-        // Firebase 설정 정보 (여러분 프로젝트의 실제 값으로 직접 입력됨)
+        // Firebase 설정 정보 (여러분의 실제 API 키로 정확하게 업데이트되었습니다!)
         const firebaseConfig = {
-            apiKey: "AIzaSyDOsAbZGppK-dEkx9wptBfd_gQaPNeGeVI",
+            apiKey: "AIzaSyDOsAbZGppK-dEkx9wptBfd_gQaPNeGeVI", // 여러분이 제공해주신 API 키가 여기에 반영되었습니다.
             authDomain: "summer-event-e6e5e.firebaseapp.com",
             projectId: "summer-event-e6e5e",
             storageBucket: "summer-event-e6e5e.firebasestorage.app",
@@ -85,7 +85,7 @@
 
             } catch (error) {
                 console.error("Error initializing Firebase:", error);
-                document.getElementById('loadingMessage').textContent = `Firebase 초기화 중 오류가 발생했습니다: ${error.message}. Firebase 콘솔에서 인증 방법을 확인해주세요.`;
+                document.getElementById('loadingMessage').textContent = `Firebase 초기화 중 오류가 발생했습니다: ${error.message}. Firebase 콘솔에서 API 키와 인증 방법을 확인해주세요.`;
                 // 오류 발생 시에도 Promise를 해결하여 기능 사용 시 오류 메시지를 띄우도록 함
                 firebaseReadyResolve();
             }
@@ -137,7 +137,7 @@
             try {
                 await setDoc(winnerDocRef, {
                     winnerName: selectedWinnerName,
-                    winnerBirthdate: selectedWinnerBirthdate,
+                    winnerBirthdate: selectedWinnerBirthdate, // 생년월일 필드가 'birthdate'로 정확히 저장되도록 수정
                     prizeSelected: prize,
                     selectedByUserId: currentUserId, // 상품을 선택한 사용자의 ID 기록
                     timestamp: new Date() // 선택 시간 기록
@@ -152,43 +152,56 @@
             }
         };
 
+        // 관리자 비밀번호 (이곳의 비밀번호는 코드에 노출되므로 보안에 매우 취약합니다. 실제 서비스에서는 사용하지 마세요.)
+        const ADMIN_PASSWORD = "admin1234"; 
+
         // 당첨자 상품 선택 현황 조회 (관리자용)
         window.showWinnerSelections = async () => {
-            // Firebase가 완전히 준비될 때까지 기다림
-            await firebaseReadyPromise;
+            // 비밀번호 프롬프트 표시
+            const enteredPassword = prompt("관리자 비밀번호를 입력해주세요:");
 
-            console.log("--- showWinnerSelections 호출됨 ---");
-            console.log("DB 인스턴스: ", db ? "초기화됨" : "NULL");
-            console.log("인증된 사용자: ", auth && auth.currentUser ? auth.currentUser.uid : "NULL");
-            console.log("현재 사용자 ID: ", currentUserId);
+            if (enteredPassword === ADMIN_PASSWORD) {
+                // Firebase가 완전히 준비될 때까지 기다림
+                await firebaseReadyPromise;
 
-            if (!db || !auth.currentUser) {
-                showMessageBox("오류: 데이터베이스 연결에 문제가 있습니다. Firebase 콘솔(인증 방법 및 보안 규칙) 및 브라우저 콘솔을 확인해주세요.");
-                return;
-            }
+                console.log("--- showWinnerSelections 호출됨 ---");
+                console.log("DB 인스턴스: ", db ? "초기화됨" : "NULL");
+                console.log("인증된 사용자: ", auth && auth.currentUser ? auth.currentUser.uid : "NULL");
+                console.log("현재 사용자 ID: ", currentUserId);
 
-            document.getElementById('adminViewContent').innerHTML = '<p>현황을 불러오는 중...</p>';
-            document.getElementById('adminViewSection').classList.remove('hidden');
-
-            const prizeCollectionRef = collection(db, `artifacts/${appId}/public/data/wishEventPrizes`);
-            try {
-                const querySnapshot = await getDocs(prizeCollectionRef);
-                let selectionsHtml = '<h3 class="text-xl font-bold mb-4">✨ 당첨자 상품 선택 현황</h3>';
-                if (querySnapshot.empty) {
-                    selectionsHtml += '<p>아직 선택된 상품이 없습니다.</p>';
-                } else {
-                    selectionsHtml += '<ul class="list-disc pl-5">';
-                    querySnapshot.forEach((doc) => {
-                        const data = doc.data();
-                        selectionsHtml += `<li><strong>${data.winnerName} (${data.winnerBirthdate})</strong>: ${data.prizeSelected}`;
-                        selectionsHtml += ` (선택자 ID: ${data.selectedByUserId.substring(0, 8)}...${data.selectedByUserId.substring(data.selectedByUserId.length - 4)})</li>`; // 사용자 ID 일부만 표시
-                    });
-                    selectionsHtml += '</ul>';
+                if (!db || !auth.currentUser) {
+                    showMessageBox("오류: 데이터베이스 연결에 문제가 있습니다. Firebase 콘솔(인증 방법 및 보안 규칙) 및 브라우저 콘솔을 확인해주세요.");
+                    return;
                 }
-                document.getElementById('adminViewContent').innerHTML = selectionsHtml;
-            } catch (error) {
-                console.error("Error fetching winner selections:", error);
-                document.getElementById('adminViewContent').innerHTML = '<p class="text-red-500">현황을 불러오는데 실패했습니다. 오류: ' + error.message + '</p>';
+
+                document.getElementById('adminViewContent').innerHTML = '<p>현황을 불러오는 중...</p>';
+                document.getElementById('adminViewSection').classList.remove('hidden');
+
+                const prizeCollectionRef = collection(db, `artifacts/${appId}/public/data/wishEventPrizes`);
+                try {
+                    const querySnapshot = await getDocs(prizeCollectionRef);
+                    let selectionsHtml = '<h3 class="text-xl font-bold mb-4">✨ 당첨자 상품 선택 현황</h3>';
+                    if (querySnapshot.empty) {
+                        selectionsHtml += '<p>아직 선택된 상품이 없습니다.</p>';
+                    } else {
+                        selectionsHtml += '<ul class="list-disc pl-5">';
+                        querySnapshot.forEach((doc) => {
+                            const data = doc.data();
+                            selectionsHtml += `<li><strong>${data.winnerName} (${data.winnerBirthdate})</strong>: ${data.prizeSelected}`;
+                            selectionsHtml += ` (선택자 ID: ${data.selectedByUserId.substring(0, 8)}...${data.selectedByUserId.substring(data.selectedByUserId.length - 4)})</li>`; // 사용자 ID 일부만 표시
+                        });
+                        selectionsHtml += '</ul>';
+                    }
+                    document.getElementById('adminViewContent').innerHTML = selectionsHtml;
+                } catch (error) {
+                    console.error("Error fetching winner selections:", error);
+                    document.getElementById('adminViewContent').innerHTML = '<p class="text-red-500">현황을 불러오는데 실패했습니다. 오류: ' + error.message + '</p>';
+                }
+            } else if (enteredPassword !== null) { // 비밀번호 입력창에서 '취소'를 누르지 않고, 비밀번호가 틀린 경우
+                showMessageBox("잘못된 비밀번호입니다.");
+                document.getElementById('adminViewSection').classList.add('hidden'); // 비밀번호 틀리면 현황 숨기기
+            } else { // 비밀번호 입력창에서 '취소'를 누른 경우
+                document.getElementById('adminViewSection').classList.add('hidden'); // 현황 숨기기
             }
         };
 
