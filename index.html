@@ -1,0 +1,458 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>썸머스쿨 소원을 말해봐 이벤트</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;700&display=swap" rel="stylesheet">
+    <!-- Firebase SDK 로드 -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, doc, setDoc, getDocs, collection } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // Firebase 설정 및 초기화 (Canvas 환경에서 제공되는 전역 변수 사용)
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
+
+        let app;
+        let db;
+        let auth;
+        let currentUserId = ''; // 현재 사용자의 ID를 저장할 변수
+
+        // Firebase 초기화 및 인증
+        const initializeFirebase = async () => {
+            try {
+                app = initializeApp(firebaseConfig);
+                db = getFirestore(app);
+                auth = getAuth(app);
+
+                // 커스텀 토큰이 있으면 로그인, 없으면 익명 로그인
+                if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+                    await signInWithCustomToken(auth, __initial_auth_token);
+                } else {
+                    await signInAnonymously(auth);
+                }
+
+                // 인증 상태 변경 감지
+                onAuthStateChanged(auth, (user) => {
+                    if (user) {
+                        currentUserId = user.uid;
+                        console.log("Firebase initialized and authenticated. User ID:", currentUserId);
+                        // 인증 후 필요한 UI 업데이트 또는 데이터 로드
+                    } else {
+                        currentUserId = crypto.randomUUID(); // 익명 사용자 ID 생성
+                        console.log("Firebase initialized. Anonymous User ID:", currentUserId);
+                    }
+                    // 로딩 인디케이터 숨기기 등
+                    document.getElementById('loadingMessage').classList.add('hidden');
+                });
+
+            } catch (error) {
+                console.error("Error initializing Firebase:", error);
+                document.getElementById('loadingMessage').textContent = "Firebase 초기화 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.";
+            }
+        };
+
+        // Firebase 초기화 함수 호출
+        initializeFirebase();
+
+        // 현재 선택된 2등 당첨자의 정보를 저장할 변수
+        let selectedWinnerName = '';
+        let selectedWinnerBirthdate = '';
+
+        // 상품 선택 모달 열기
+        window.openPrizeSelectionModal = (name, birthdate) => {
+            selectedWinnerName = name;
+            selectedWinnerBirthdate = birthdate;
+            document.getElementById('modalWinnerName').textContent = name;
+            document.getElementById('prizeSelectionModal').classList.remove('hidden');
+        };
+
+        // 상품 선택 모달 닫기
+        window.closePrizeSelectionModal = () => {
+            document.getElementById('prizeSelectionModal').classList.add('hidden');
+        };
+
+        // 상품 선택 및 Firestore에 저장
+        window.selectPrize = async (prize) => {
+            if (!db || !auth.currentUser) {
+                console.error("Firestore 또는 인증이 준비되지 않았습니다.");
+                showMessageBox("오류: 데이터베이스 연결에 문제가 있습니다. 잠시 후 다시 시도해주세요.");
+                return;
+            }
+
+            // 고유한 문서 ID 생성 (이름-생년월일 조합)
+            const docId = `${selectedWinnerName}-${selectedWinnerBirthdate}`;
+            const prizeCollectionRef = collection(db, `artifacts/${appId}/public/data/wishEventPrizes`);
+            const winnerDocRef = doc(prizeCollectionRef, docId);
+
+            try {
+                await setDoc(winnerDocRef, {
+                    winnerName: selectedWinnerName,
+                    winnerBirthdate: selectedWinnerBirthdate,
+                    prizeSelected: prize,
+                    selectedByUserId: currentUserId, // 상품을 선택한 사용자의 ID 기록
+                    timestamp: new Date() // 선택 시간 기록
+                }, { merge: true }); // 기존 문서가 있으면 업데이트, 없으면 생성
+
+                showMessageBox(`${selectedWinnerName}님의 ${prize} 선택이 완료되었습니다!`);
+                closePrizeSelectionModal(); // 모달 닫기
+
+            } catch (error) {
+                console.error("Error saving prize selection:", error);
+                showMessageBox("상품 선택 저장 중 오류가 발생했습니다. 다시 시도해주세요.");
+            }
+        };
+
+        // 당첨자 상품 선택 현황 조회 (관리자용)
+        window.showWinnerSelections = async () => {
+            if (!db || !auth.currentUser) {
+                showMessageBox("오류: 데이터베이스 연결에 문제가 있습니다. 잠시 후 다시 시도해주세요.");
+                return;
+            }
+
+            document.getElementById('adminViewContent').innerHTML = '<p>현황을 불러오는 중...</p>';
+            document.getElementById('adminViewSection').classList.remove('hidden');
+
+            const prizeCollectionRef = collection(db, `artifacts/${appId}/public/data/wishEventPrizes`);
+            try {
+                const querySnapshot = await getDocs(prizeCollectionRef);
+                let selectionsHtml = '<h3 class="text-xl font-bold mb-4">✨ 당첨자 상품 선택 현황</h3>';
+                if (querySnapshot.empty) {
+                    selectionsHtml += '<p>아직 선택된 상품이 없습니다.</p>';
+                } else {
+                    selectionsHtml += '<ul class="list-disc pl-5">';
+                    querySnapshot.forEach((doc) => {
+                        const data = doc.data();
+                        selectionsHtml += `<li><strong>${data.winnerName} (${data.winnerBirthdate})</strong>: ${data.prizeSelected}`;
+                        selectionsHtml += ` (선택자 ID: ${data.selectedByUserId.substring(0, 8)}...${data.selectedByUserId.substring(data.selectedByUserId.length - 4)})</li>`; // 사용자 ID 일부만 표시
+                    });
+                    selectionsHtml += '</ul>';
+                }
+                document.getElementById('adminViewContent').innerHTML = selectionsHtml;
+            } catch (error) {
+                console.error("Error fetching winner selections:", error);
+                document.getElementById('adminViewContent').innerHTML = '<p class="text-red-500">현황을 불러오는데 실패했습니다. 오류: ' + error.message + '</p>';
+            }
+        };
+
+        // 메시지 박스 표시 함수 (alert 대신 사용)
+        function showMessageBox(message) {
+            const messageBox = document.getElementById('messageBox');
+            const messageText = document.getElementById('messageBoxText');
+            messageText.textContent = message;
+            messageBox.classList.remove('hidden');
+            setTimeout(() => {
+                messageBox.classList.add('hidden');
+            }, 3000); // 3초 후 자동 숨김
+        }
+    </script>
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f0f8ff; /* Light blue background for summer feel */
+        }
+        .container {
+            max-width: 800px;
+            margin: 2rem auto;
+            padding: 1.5rem;
+            background-color: #ffffff;
+            border-radius: 20px;
+            box-shadow: 0 10px 20px rgba(0, 0, 0, 0.1);
+            overflow: hidden; /* For wave effect */
+        }
+        .header-wave {
+            background: linear-gradient(to right, #87ceeb, #aeeeee); /* Sky blue to light cyan */
+            position: relative;
+            padding: 3rem 1.5rem;
+            border-top-left-radius: 20px;
+            border-top-right-radius: 20px;
+            overflow: hidden;
+            color: #ffffff;
+            text-align: center;
+        }
+        .header-wave::before {
+            content: '';
+            position: absolute;
+            bottom: -50px;
+            left: 0;
+            width: 100%;
+            height: 100px;
+            background-color: #ffffff;
+            border-radius: 50% / 100px 100px 0 0;
+            transform: translateY(50%);
+        }
+        .section-title {
+            color: #4682b4; /* Steel blue */
+            border-bottom: 2px solid #aeeeee;
+            padding-bottom: 0.5rem;
+            margin-bottom: 1.5rem;
+        }
+        .prize-category {
+            background-color: #f7faff; /* Lighter blue */
+            border: 1px solid #e0f2f7;
+            border-radius: 10px;
+            padding: 1rem;
+            margin-bottom: 1rem;
+        }
+        .prize-category h3 {
+            color: #1e90ff; /* Dodger blue */
+            font-weight: bold;
+            margin-bottom: 0.5rem;
+        }
+        .winner-list {
+            list-style: none;
+            padding: 0;
+        }
+        .winner-list li {
+            background-color: #ffffff;
+            padding: 0.5rem 1rem;
+            margin-bottom: 0.5rem;
+            border-radius: 5px;
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.05);
+            display: flex;
+            align-items: center;
+            cursor: pointer; /* 2등 당첨자 이름에 커서 포인터 추가 */
+            transition: background-color 0.2s ease;
+        }
+        .winner-list li:hover {
+            background-color: #e0f7fa; /* 호버 시 배경색 변경 */
+        }
+        .winner-list li::before {
+            content: '⭐'; /* Star icon */
+            margin-right: 0.5rem;
+        }
+        .call-to-action {
+            background-color: #ffd700; /* Gold for highlight */
+            color: #333333;
+            padding: 1.5rem;
+            border-radius: 15px;
+            text-align: center;
+            margin-top: 2rem;
+            box-shadow: 0 5px 10px rgba(0, 0, 0, 0.1);
+        }
+        .call-to-action a {
+            display: inline-block;
+            background-color: #ff8c00; /* Dark orange */
+            color: #ffffff;
+            padding: 0.8rem 2rem;
+            border-radius: 50px;
+            text-decoration: none;
+            font-weight: bold;
+            transition: background-color 0.3s ease;
+            margin-top: 1rem;
+        }
+        .call-to-action a:hover {
+            background-color: #e67e00;
+        }
+        .beach-elements {
+            display: flex;
+            justify-content: space-around;
+            padding: 1rem 0;
+            font-size: 3rem; /* Larger for emojis */
+        }
+        .purpose-paragraph {
+            margin-bottom: 1rem;
+        }
+        .highlight {
+            color: #e67e00; /* Orange for emphasis */
+            font-weight: bold;
+        }
+
+        /* 모달 관련 스타일 */
+        .modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.5);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+        }
+        .modal-content {
+            background-color: #ffffff;
+            padding: 2rem;
+            border-radius: 15px;
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.3);
+            text-align: center;
+            max-width: 400px;
+            width: 90%;
+            position: relative;
+        }
+        .modal-close-button {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            background: none;
+            border: none;
+            font-size: 1.5rem;
+            cursor: pointer;
+            color: #888;
+        }
+        .modal-close-button:hover {
+            color: #333;
+        }
+        .prize-option-button {
+            background-color: #4CAF50; /* Green */
+            color: white;
+            padding: 10px 20px;
+            margin: 10px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 1rem;
+            transition: background-color 0.3s ease;
+        }
+        .prize-option-button:hover {
+            background-color: #45a049;
+        }
+        /* 메시지 박스 */
+        .message-box {
+            position: fixed;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            background-color: #333;
+            color: white;
+            padding: 10px 20px;
+            border-radius: 8px;
+            text-align: center;
+            z-index: 2000;
+            opacity: 0.9;
+        }
+        /* 로딩 메시지 */
+        #loadingMessage {
+            text-align: center;
+            margin-top: 20px;
+            font-size: 1.1rem;
+            color: #666;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header-wave">
+            <h1 class="text-4xl font-bold mb-2">썸머스쿨 소원을 말해봐 이벤트</h1>
+            <p class="text-xl">여름방학 햇살처럼 반짝이는 소원을 말해보세요!</p>
+            <div class="beach-elements mt-4">
+                <!-- 여름 분위기 이모지 아이콘들 -->
+                <span>🏄</span>
+                <span>⛱️</span>
+                <span>😎</span>
+                <span>🌟</span>
+            </div>
+        </div>
+
+        <div class="p-6">
+            <h2 class="text-2xl font-bold section-title">✨ 이벤트 목적</h2>
+            <p class="text-gray-700 leading-relaxed purpose-paragraph">
+                안녕하세요, 서연고ㆍ의치약 전문관 러셀 울산학원입니다!
+            </p>
+            <p class="text-gray-700 leading-relaxed purpose-paragraph">
+                러셀 울산학원 썸머스쿨 오픈을 기념하여 진행된 <span class="highlight">"썸머스쿨 소원을 말해봐 이벤트"</span>에 참여해주신 모든 분들께 진심으로 감사드립니다.
+            </p>
+            <p class="text-gray-700 leading-relaxed purpose-paragraph">
+                이번 이벤트를 통해 재원생과 단과생들이 <span class="highlight">여름방학 동안 이루고 싶은 소원</span>을 작성하도록 독려하고, 추첨을 통해 선물을 증정함으로써 학원에 대한 소속감을 느끼고 긍정적인 분위기 속에서 학업에 집중할 수 있도록 유도하고자 했습니다. 여러분의 소중한 참여 덕분에 이벤트가 더욱 빛날 수 있었습니다.
+            </p>
+
+            <h2 class="text-2xl font-bold section-title">🏆 당첨자 명단 발표: 이름(생년월일)</h2>
+
+            <div class="prize-category">
+                <h3>🥇 1등 당첨자</h3>
+                <ul class="winner-list">
+                    <li>김ㅇ현 (061010)</li>
+                    <li>홍ㅇ서 (081217)</li>
+                    <li>강ㅇ서 (060807)</li>
+                    <li>송ㅇ서 (070308)</li>
+                    <li>김ㅇ찬 (090309)</li>
+                </ul>
+            </div>
+
+            <div class="prize-category">
+                <h3>  2등 당첨자 (클릭하여 상품 선택)</h3>
+                <ul class="winner-list grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+                    <!-- 2등 당첨자 리스트 (클릭 시 상품 선택 모달 열림) -->
+                    <li onclick="openPrizeSelectionModal('강ㅇ주', '040213')">강ㅇ주 (040213)</li>
+                    <li onclick="openPrizeSelectionModal('강ㅇ서', '060807')">강ㅇ서 (060807)</li>
+                    <li onclick="openPrizeSelectionModal('김ㅇ현', '070817')">김ㅇ현 (070817)</li>
+                    <li onclick="openPrizeSelectionModal('김ㅇ훈', '070224')">김ㅇ훈 (070224)</li>
+                    <li onclick="openPrizeSelectionModal('김ㅇ지', '040712')">김ㅇ지 (040712)</li>
+                    <li onclick="openPrizeSelectionModal('김ㅇ은', '060930')">김ㅇ은 (060930)</li>
+                    <li onclick="openPrizeSelectionModal('김ㅇ경', '090316')">김ㅇ경 (090316)</li>
+                    <li onclick="openPrizeSelectionModal('김ㅇ윤', '070501')">김ㅇ윤 (070501)</li>
+                    <li onclick="openPrizeSelectionModal('김ㅇ진', '060325')">김ㅇ진 (060325)</li>
+                    <li onclick="openPrizeSelectionModal('김ㅇ우', '060312')">김ㅇ우 (060312)</li>
+                    <li onclick="openPrizeSelectionModal('류ㅇ영', '061210')">류ㅇ영 (061210)</li>
+                    <li onclick="openPrizeSelectionModal('류ㅇ진', '070309')">류ㅇ진 (070309)</li>
+                    <li onclick="openPrizeSelectionModal('박ㅇ재', '060918')">박ㅇ재 (060918)</li>
+                    <li onclick="openPrizeSelectionModal('박ㅇ훈', '070122')">박ㅇ훈 (070122)</li>
+                    <li onclick="openPrizeSelectionModal('박ㅇ영', '060514')">박ㅇ영 (060514)</li>
+                    <li onclick="openPrizeSelectionModal('백ㅇ훈', '091226')">백ㅇ훈 (091226)</li>
+                    <li onclick="openPrizeSelectionModal('여ㅇ현', '080128')">여ㅇ현 (080128)</li>
+                    <li onclick="openPrizeSelectionModal('이ㅇ현', '080223')">이ㅇ현 (080223)</li>
+                    <li onclick="openPrizeSelectionModal('이ㅇ원', '080722')">이ㅇ원 (080722)</li>
+                    <li onclick="openPrizeSelectionModal('정ㅇ우', '070217')">정ㅇ우 (070217)</li>
+                    <li onclick="openPrizeSelectionModal('정ㅇ현', '090723')">정ㅇ현 (090723)</li>
+                    <li onclick="openPrizeSelectionModal('정ㅇ희', '090716')">정ㅇ희 (090716)</li>
+                    <li onclick="openPrizeSelectionModal('정ㅇ호', '080121')">정ㅇ호 (080121)</li>
+                    <li onclick="openPrizeSelectionModal('조ㅇ수', '060406')">조ㅇ수 (060406)</li>
+                    <li onclick="openPrizeSelectionModal('최ㅇ현', '050302')">최ㅇ현 (050302)</li>
+                    <li onclick="openPrizeSelectionModal('최ㅇ현', '060615')">최ㅇ현 (060615)</li>
+                    <li onclick="openPrizeSelectionModal('최ㅇ진', '070905')">최ㅇ진 (070905)</li>
+                    <li onclick="openPrizeSelectionModal('황ㅇ현', '070827')">황ㅇ현 (070827)</li>
+                    <li onclick="openPrizeSelectionModal('황ㅇ민', '070126')">황ㅇ민 (070126)</li>
+                </ul>
+            </div>
+
+            <div class="call-to-action">
+                <h2 class="text-2xl font-bold mb-2">🎁 상품 수령 안내</h2>
+                <p class="text-lg">당첨자 확인 문자를 들고 3층 입학처에 상품을 수령하러 오시면 됩니다.</p>
+                <a href="#" onclick="alert('이벤트 참여 및 당첨에 감사드립니다! 🎉'); return false;">자세히 보기</a>
+            </div>
+
+            <div class="mt-8 text-center">
+                <button onclick="showWinnerSelections()" class="bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded-lg shadow-md transition duration-300">
+                    당첨자 상품 선택 현황 보기 (관리자용)
+                </button>
+            </div>
+
+            <!-- 관리자 조회 섹션 (처음에는 숨겨져 있음) -->
+            <div id="adminViewSection" class="hidden mt-8 p-6 bg-gray-100 rounded-lg shadow-inner">
+                <div id="adminViewContent">
+                    <!-- 선택 현황이 여기에 표시됩니다 -->
+                </div>
+                <p class="mt-4 text-sm text-gray-600">※ 데이터는 실시간으로 업데이트됩니다. 선택자 ID는 개인 정보 보호를 위해 일부만 표시됩니다.</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- 상품 선택 모달 -->
+    <div id="prizeSelectionModal" class="modal-overlay hidden">
+        <div class="modal-content">
+            <button class="modal-close-button" onclick="closePrizeSelectionModal()">×</button>
+            <h3 class="text-2xl font-bold mb-4"><span id="modalWinnerName"></span>님, 상품을 선택해주세요!</h3>
+            <div class="flex justify-center gap-4">
+                <button class="prize-option-button" onclick="selectPrize('키링')">키링 선택</button>
+                <button class="prize-option-button" onclick="selectPrize('볼펜')">볼펜 선택</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 로딩 메시지 박스 -->
+    <div id="loadingMessage" class="message-box">
+        데이터베이스를 초기화 중입니다... 잠시만 기다려 주세요.
+    </div>
+
+    <!-- 메시지 박스 (alert 대체) -->
+    <div id="messageBox" class="message-box hidden">
+        <span id="messageBoxText"></span>
+    </div>
+
+</body>
+</html>
+ 
