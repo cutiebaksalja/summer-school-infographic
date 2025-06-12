@@ -28,12 +28,19 @@
         // Firebase 초기화 및 인증
         const initializeFirebase = async () => {
             try {
+                // firebaseConfig에 projectId가 있는지 확인
+                if (!firebaseConfig.projectId) {
+                    console.error("Firebase Initialization Error: projectId is not provided in firebaseConfig.");
+                    document.getElementById('loadingMessage').textContent = "오류: Firebase 프로젝트 ID가 제공되지 않았습니다. Canvas 환경 설정을 확인해주세요.";
+                    firebaseReadyResolve(); // 오류 발생 시에도 Promise 해결
+                    return; // 더 이상 진행하지 않음
+                }
+
                 app = initializeApp(firebaseConfig);
                 db = getFirestore(app);
                 auth = getAuth(app);
 
                 // Firebase 인증 상태 변경 감지 리스너 설정
-                // 이 리스너는 인증 상태가 결정되면 (로그인 성공 또는 익명 로그인) 한 번 호출됩니다.
                 onAuthStateChanged(auth, async (user) => {
                     if (user) {
                         currentUserId = user.uid;
@@ -176,8 +183,8 @@
         function showMessageBox(message) {
             const messageBox = document.getElementById('messageBox');
             const messageText = document.getElementById('messageBoxText');
-            messageText.textContent = message;
             messageBox.classList.remove('hidden');
+            messageText.textContent = message;
             setTimeout(() => {
                 messageBox.classList.add('hidden');
             }, 5000); // 5초 후 자동 숨김
@@ -416,7 +423,7 @@
             <h2 class="text-2xl font-bold section-title">🏆 당첨자 명단 발표: 이름(생년월일)</h2>
 
             <div class="prize-category">
-                <h3>🥇 1등 당첨자</h3>
+                <h3>� 1등 당첨자</h3>
                 <ul class="winner-list first-place-winners">
                     <!-- 1등 당첨자는 클릭 이벤트 없음 -->
                     <li>김ㅇ현 (061010)</li>
@@ -509,3 +516,4 @@
 
 </body>
 </html>
+�
