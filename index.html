@@ -241,15 +241,22 @@
         };
 
         // 메시지 박스 표시 함수 (alert 대신 사용)
-        function showMessageBox(message) {
+        // 'function showMessageBox(message)' 대신 'window.showMessageBox = function(message)'로 변경하여 전역 접근 가능하게 함
+        window.showMessageBox = function(message) {
+            console.log("showMessageBox called with message:", message); // 이 로그가 콘솔에 뜨는지 확인해주세요.
             const messageBox = document.getElementById('messageBox');
             const messageText = document.getElementById('messageBoxText');
-            messageBox.classList.remove('hidden');
-            messageText.textContent = message;
-            setTimeout(() => {
-                messageBox.classList.add('hidden');
-            }, 5000); // 5초 후 자동 숨김
-        }
+
+            if (messageBox && messageText) {
+                messageBox.classList.remove('hidden');
+                messageText.textContent = message;
+                setTimeout(() => {
+                    messageBox.classList.add('hidden');
+                }, 5000); // 5초 후 자동 숨김
+            } else {
+                console.error("Error: messageBox or messageBoxText element not found!"); // 요소가 없을 경우 오류 로그
+            }
+        };
     </script>
     <style>
         body {
