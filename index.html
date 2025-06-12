@@ -94,14 +94,47 @@
         // Firebase 초기화 함수 호출
         initializeFirebase();
 
-        // 현재 선택된 2등 당첨자의 정보를 저장할 변수
+        // 현재 선택된 2등 당첨자의 정보를 저장할 변수 (본인 식별 및 상품 선택용)
         let selectedWinnerName = '';
-        let selectedWinnerBirthdate = '';
+        // 'selectedWinnerBirthdate' 대신 'selectedWinnerPhoneNumberLast4'를 사용
+        let selectedWinnerPhoneNumberLast4 = ''; 
 
-        // 상품 선택 모달 열기
-        window.openPrizeSelectionModal = (name, birthdate) => {
+        // 본인 식별 번호 입력 모달 관련 변수 및 함수
+        let currentWinnerForId = ''; // 본인 식별 모달에 표시될 이름
+        // 'currentBirthdateForId' 대신 'currentPhoneNumberLast4ForId'를 사용
+        let currentPhoneNumberLast4ForId = ''; // 본인 식별 모달에서 비교할 휴대폰 뒷 4자리
+
+        window.openIdVerificationModal = (name, phoneNumberLast4) => {
+            currentWinnerForId = name;
+            currentPhoneNumberLast4ForId = phoneNumberLast4; // 휴대폰 뒷 4자리 저장
+            document.getElementById('idVerifyWinnerName').textContent = name;
+            document.getElementById('idVerificationModal').classList.remove('hidden');
+            document.getElementById('personalIdInput').value = ''; // 이전 입력값 초기화
+            document.getElementById('personalIdInput').focus(); // 입력 필드에 포커스
+        };
+
+        window.closeIdVerificationModal = () => {
+            document.getElementById('idVerificationModal').classList.add('hidden');
+        };
+
+        window.verifyIdAndOpenPrizeModal = () => {
+            const enteredId = document.getElementById('personalIdInput').value;
+            // 입력된 식별 번호와 휴대폰 뒷 4자리 비교
+            if (enteredId === currentPhoneNumberLast4ForId) {
+                closeIdVerificationModal();
+                // 식별 번호가 일치하면 상품 선택 모달 열기
+                // 상품 선택 모달에 이름과 휴대폰 뒷 4자리 전달
+                openPrizeSelectionModal(currentWinnerForId, currentPhoneNumberLast4ForId);
+            } else {
+                showMessageBox("본인 식별 번호가 일치하지 않습니다.");
+            }
+        };
+
+        // 상품 선택 모달 열기 (본인 식별 번호 확인 후 호출됨)
+        // 매개변수 이름을 'birthdate'에서 'phoneNumberLast4'로 변경
+        window.openPrizeSelectionModal = (name, phoneNumberLast4) => {
             selectedWinnerName = name;
-            selectedWinnerBirthdate = birthdate;
+            selectedWinnerPhoneNumberLast4 = phoneNumberLast4; // 휴대폰 뒷 4자리 저장
             document.getElementById('modalWinnerName').textContent = name;
             document.getElementById('prizeSelectionModal').classList.remove('hidden');
         };
@@ -128,8 +161,8 @@
                 return;
             }
 
-            // 고유한 문서 ID 생성 (이름-생년월일 조합)
-            const docId = `${selectedWinnerName}-${selectedWinnerBirthdate}`;
+            // 고유한 문서 ID 생성 (이름-휴대폰뒷4자리 조합)
+            const docId = `${selectedWinnerName}-${selectedWinnerPhoneNumberLast4}`;
             // 컬렉션 경로: public/data 아래에 저장
             const prizeCollectionRef = collection(db, `artifacts/${appId}/public/data/wishEventPrizes`);
             const winnerDocRef = doc(prizeCollectionRef, docId);
@@ -137,7 +170,8 @@
             try {
                 await setDoc(winnerDocRef, {
                     winnerName: selectedWinnerName,
-                    winnerBirthdate: selectedWinnerBirthdate, // 생년월일 필드가 'birthdate'로 정확히 저장되도록 수정
+                    // 'winnerBirthdate' 대신 'winnerPhoneNumberLast4' 필드 사용
+                    winnerPhoneNumberLast4: selectedWinnerPhoneNumberLast4, 
                     prizeSelected: prize,
                     selectedByUserId: currentUserId, // 상품을 선택한 사용자의 ID 기록
                     timestamp: new Date() // 선택 시간 기록
@@ -187,7 +221,8 @@
                         selectionsHtml += '<ul class="list-disc pl-5">';
                         querySnapshot.forEach((doc) => {
                             const data = doc.data();
-                            selectionsHtml += `<li><strong>${data.winnerName} (${data.winnerBirthdate})</strong>: ${data.prizeSelected}`;
+                            // 'winnerBirthdate' 대신 'winnerPhoneNumberLast4' 표시
+                            selectionsHtml += `<li><strong>${data.winnerName} (${data.winnerPhoneNumberLast4})</strong>: ${data.prizeSelected}`; 
                             selectionsHtml += ` (선택자 ID: ${data.selectedByUserId.substring(0, 8)}...${data.selectedByUserId.substring(data.selectedByUserId.length - 4)})</li>`; // 사용자 ID 일부만 표시
                         });
                         selectionsHtml += '</ul>';
@@ -319,9 +354,10 @@
             margin-top: 2rem;
             box-shadow: 0 5px 10px rgba(0, 0, 0, 0.1);
         }
-        .call-to-action a {
+        /* '자세히 보기' 버튼 제거로 인해 관련 a 태그 스타일 삭제 */
+        /* .call-to-action a {
             display: inline-block;
-            background-color: #ff8c00; /* Dark orange */
+            background-color: #ff8c00;
             color: #ffffff;
             padding: 0.8rem 2rem;
             border-radius: 50px;
@@ -332,7 +368,7 @@
         }
         .call-to-action a:hover {
             background-color: #e67e00;
-        }
+        } */
         .beach-elements {
             display: flex;
             justify-content: space-around;
@@ -418,6 +454,16 @@
             font-size: 1.1rem;
             color: #666;
         }
+        /* 본인 식별 번호 입력 모달 스타일 추가 */
+        .id-input-field {
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            width: calc(100% - 40px); /* 패딩 고려 */
+            margin-bottom: 15px;
+            font-size: 1rem;
+            text-align: center;
+        }
     </style>
 </head>
 <body>
@@ -463,43 +509,48 @@
             <div class="prize-category">
                 <h3>🥈 2등 당첨자 (클릭하여 상품 선택)</h3>
                 <ul class="winner-list second-place-winners grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
-                    <!-- 2등 당첨자 리스트 (클릭 시 상품 선택 모달 열림) -->
-                    <li onclick="openPrizeSelectionModal('강ㅇ주', '040213')">강ㅇ주 (040213)</li>
-                    <li onclick="openPrizeSelectionModal('강ㅇ서', '060807')">강ㅇ서 (060807)</li>
-                    <li onclick="openPrizeSelectionModal('김ㅇ현', '070817')">김ㅇ현 (070817)</li>
-                    <li onclick="openPrizeSelectionModal('김ㅇ훈', '070224')">김ㅇ훈 (070224)</li>
-                    <li onclick="openPrizeSelectionModal('김ㅇ지', '040712')">김ㅇ지 (040712)</li>
-                    <li onclick="openPrizeSelectionModal('김ㅇ은', '060930')">김ㅇ은 (060930)</li>
-                    <li onclick="openPrizeSelectionModal('김ㅇ경', '090316')">김ㅇ경 (090316)</li>
-                    <li onclick="openPrizeSelectionModal('김ㅇ윤', '070501')">김ㅇ윤 (070501)</li>
-                    <li onclick="openPrizeSelectionModal('김ㅇ진', '060325')">김ㅇ진 (060325)</li>
-                    <li onclick="openPrizeSelectionModal('김ㅇ우', '060312')">김ㅇ우 (060312)</li>
-                    <li onclick="openPrizeSelectionModal('류ㅇ영', '061210')">류ㅇ영 (061210)</li>
-                    <li onclick="openPrizeSelectionModal('류ㅇ진', '070309')">류ㅇ진 (070309)</li>
-                    <li onclick="openPrizeSelectionModal('박ㅇ재', '060918')">박ㅇ재 (060918)</li>
-                    <li onclick="openPrizeSelectionModal('박ㅇ훈', '070122')">박ㅇ훈 (070122)</li>
-                    <li onclick="openPrizeSelectionModal('박ㅇ영', '060514')">박ㅇ영 (060514)</li>
-                    <li onclick="openPrizeSelectionModal('백ㅇ훈', '091226')">백ㅇ훈 (091226)</li>
-                    <li onclick="openPrizeSelectionModal('여ㅇ현', '080128')">여ㅇ현 (080128)</li>
-                    <li onclick="openPrizeSelectionModal('이ㅇ현', '080223')">이ㅇ현 (080223)</li>
-                    <li onclick="openPrizeSelectionModal('이ㅇ원', '080722')">이ㅇ원 (080722)</li>
-                    <li onclick="openPrizeSelectionModal('정ㅇ우', '070217')">정ㅇ우 (070217)</li>
-                    <li onclick="openPrizeSelectionModal('정ㅇ현', '090723')">정ㅇ현 (090723)</li>
-                    <li onclick="openPrizeSelectionModal('정ㅇ희', '090716')">정ㅇ희 (090716)</li>
-                    <li onclick="openPrizeSelectionModal('정ㅇ호', '080121')">정ㅇ호 (080121)</li>
-                    <li onclick="openPrizeSelectionModal('조ㅇ수', '060406')">조ㅇ수 (060406)</li>
-                    <li onclick="openPrizeSelectionModal('최ㅇ현', '050302')">최ㅇ현 (050302)</li>
-                    <li onclick="openPrizeSelectionModal('최ㅇ현', '060615')">최ㅇ현 (060615)</li>
-                    <li onclick="openPrizeSelectionModal('최ㅇ진', '070905')">최ㅇ진 (070905)</li>
-                    <li onclick="openPrizeSelectionModal('황ㅇ현', '070827')">황ㅇ현 (070827)</li>
-                    <li onclick="openPrizeSelectionModal('황ㅇ민', '070126')">황ㅇ민 (070126)</li>
+                    <!-- 2등 당첨자 리스트 (클릭 시 본인 식별 번호 모달 열림) -->
+                    <li onclick="openIdVerificationModal('강ㅇ주', '1498')">강ㅇ주 (040213)</li>
+                    <li onclick="openIdVerificationModal('강ㅇ서', '2874')">강ㅇ서 (060807)</li>
+                    <li onclick="openIdVerificationModal('김ㅇ현', '5447')">김ㅇ현 (070817)</li>
+                    <li onclick="openIdVerificationModal('김ㅇ훈', '5829')">김ㅇ훈 (070224)</li>
+                    <li onclick="openIdVerificationModal('김ㅇ지', '9879')">김ㅇ지 (040712)</li>
+                    <li onclick="openIdVerificationModal('김ㅇ은', '9992')">김ㅇ은 (060930)</li>
+                    <li onclick="openIdVerificationModal('김ㅇ경', '0264')">김ㅇ경 (090316)</li>
+                    <li onclick="openIdVerificationModal('김ㅇ윤', '4138')">김ㅇ윤 (070501)</li>
+                    <li onclick="openIdVerificationModal('김ㅇ진', '6325')">김ㅇ진 (060325)</li>
+                    <li onclick="openIdVerificationModal('김ㅇ우', '6420')">김ㅇ우 (060312)</li>
+                    <li onclick="openIdVerificationModal('류ㅇ영', '5240')">류ㅇ영 (061210)</li>
+                    <li onclick="openIdVerificationModal('류ㅇ진', '3090')">류ㅇ진 (070309)</li>
+                    <li onclick="openIdVerificationModal('박ㅇ재', '9616')">박ㅇ재 (060918)</li>
+                    <li onclick="openIdVerificationModal('박ㅇ훈', '0885')">박ㅇ훈 (070122)</li>
+                    <li onclick="openIdVerificationModal('박ㅇ영', '5373')">박ㅇ영 (060514)</li>
+                    <li onclick="openIdVerificationModal('백ㅇ훈', '7495')">백ㅇ훈 (091226)</li>
+                    <li onclick="openIdVerificationModal('여ㅇ현', '8151')">여ㅇ현 (080128)</li>
+                    <li onclick="openIdVerificationModal('이ㅇ현', '5214')">이ㅇ현 (080223)</li>
+                    <li onclick="openIdVerificationModal('이ㅇ원', '4443')">이ㅇ원 (080722)</li>
+                    <li onclick="openIdVerificationModal('정ㅇ우', '5945')">정ㅇ우 (070217)</li>
+                    <li onclick="openIdVerificationModal('정ㅇ현', '2190')">정ㅇ현 (090723)</li>
+                    <li onclick="openIdVerificationModal('정ㅇ희', '9139')">정ㅇ희 (090716)</li>
+                    <li onclick="openIdVerificationModal('정ㅇ호', '7534')">정ㅇ호 (080121)</li>
+                    <li onclick="openIdVerificationModal('조ㅇ수', '0466')">조ㅇ수 (060406)</li>
+                    <li onclick="openIdVerificationModal('최ㅇ현', '8217')">최ㅇ현 (050302)</li>
+                    <li onclick="openIdVerificationModal('최ㅇ현', '1672')">최ㅇ현 (060615)</li>
+                    <li onclick="openIdVerificationModal('최ㅇ진', '6972')">최ㅇ진 (070905)</li>
+                    <li onclick="openIdVerificationModal('황ㅇ현', '0051')">황ㅇ현 (070827)</li>
+                    <li onclick="openIdVerificationModal('황ㅇ민', '4506')">황ㅇ민 (070126)</li>
                 </ul>
             </div>
 
             <div class="call-to-action">
                 <h2 class="text-2xl font-bold mb-2">🎁 상품 수령 안내</h2>
                 <p class="text-lg">당첨자 확인 문자를 들고 3층 입학처에 상품을 수령하러 오시면 됩니다.</p>
-                <a href="#" onclick="showMessageBox('6월 16일(월) ~ 6월 30일(월)까지 수령가능합니다!'); return false;">자세히 보기</a>
+                <!-- '자세히 보기' 버튼 제거 -->
+                <!-- <a href="#" onclick="showMessageBox('6월 16일(월) ~ 6월 30일(월)까지 수령가능합니다!'); return false;">자세히 보기</a> -->
+                <button class="bg-orange-500 hover:bg-orange-600 text-white font-bold py-2 px-4 rounded-full shadow-md transition duration-300 mt-4"
+                        onclick="showMessageBox('6월 16일(월) ~ 6월 30일(월)까지 수령가능합니다!');">
+                    수령 기간 안내
+                </button>
             </div>
 
             <div class="mt-8 text-center">
@@ -515,6 +566,17 @@
                 </div>
                 <p class="mt-4 text-sm text-gray-600">※ 데이터는 실시간으로 업데이트됩니다. 선택자 ID는 개인 정보 보호를 위해 일부만 표시됩니다.</p>
             </div>
+        </div>
+    </div>
+
+    <!-- 본인 식별 번호 입력 모달 -->
+    <div id="idVerificationModal" class="modal-overlay hidden">
+        <div class="modal-content">
+            <button class="modal-close-button" onclick="closeIdVerificationModal()">×</button>
+            <h3 class="text-2xl font-bold mb-4"><span id="idVerifyWinnerName"></span>님, 본인 식별 번호를 입력해주세요.</h3>
+            <p class="text-gray-600 text-sm mb-4">식별 번호는 당첨자 발표 시 안내된 휴대폰 뒷 4자리입니다. (예: 1234)</p>
+            <input type="text" id="personalIdInput" placeholder="휴대폰 뒷 4자리 (예: 1234)" class="id-input-field" maxlength="4">
+            <button class="prize-option-button" onclick="verifyIdAndOpenPrizeModal()">확인</button>
         </div>
     </div>
 
